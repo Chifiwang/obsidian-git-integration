@@ -51,6 +51,8 @@ export default class MyPlugin extends Plugin {
 
 		// console.log(this.settings.saveSchema)
 		// console.log('pull:', this.settings.vaultPath)
+		var gitCmd = `git -C "${this.settings.vaultPath}" pull`;
+		this.runGit(gitCmd);
 
 		this.registerEvent(
 			this.app.vault.on("modify", (file: TFile) => {
