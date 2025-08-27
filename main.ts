@@ -49,15 +49,15 @@ export default class MyPlugin extends Plugin {
 
 		this.saveSettings();
 
-		// console.log(this.settings.saveSchema)
-		// console.log('pull:', this.settings.vaultPath)
+		// push then pull on load
+		var gitCmd = `git -C "${this.settings.vaultPath}" push`;
+		this.runGit(gitCmd);
 		var gitCmd = `git -C "${this.settings.vaultPath}" pull`;
 		this.runGit(gitCmd);
 
+		// Save functionality
 		this.registerEvent(
 			this.app.vault.on("modify", (file: TFile) => {
-				// console.log("File saved:", file.path);
-
 				// Do something when this file is saved
 				if (file.extension === "md") {
 					this.onFileSave(file);
@@ -65,6 +65,55 @@ export default class MyPlugin extends Plugin {
 			})
 		);
 
+		this.addCommand({
+			id: "git-add",
+			name: "git add",
+			editorCallback: (editor, view) => {
+				const file = view.file;
+				var gitCmd = `git -C "${path.join(this.settings.vaultPath, path.dirname(file.path))}" add "${file.name}"`;
+				this.runGit(gitCmd);
+			}
+		});
+
+		this.addCommand({
+			id: "git-push",
+			name: "git push",
+			editorCallback: (editor, view) => {
+				var gitCmd = `git -C "${this.settings.vaultPath}" push`;
+				this.runGit(gitCmd);
+			}
+		});
+
+		this.addCommand({
+			id: "git-pull",
+			name: "git pull",
+			editorCallback: (editor, view) => {
+				var gitCmd = `git -C "${this.settings.vaultPath}" pull`;
+				this.runGit(gitCmd);
+			}
+		});
+
+		this.addCommand({
+			id: "git-commit",
+			name: "git commit",
+			editorCallback: (editor, view) => {
+				new InputModal(this.app, (result) => {
+					const gitCmd = `git -C "${this.settings.vaultPath}" commit -m "${result}"`
+					this.runGit(gitCmd);
+				}, "Commit Message").open();
+			}
+		});
+
+		this.addCommand({
+			id: "git-command",
+			name: "git command",
+			editorCallback: (editor, view) => {
+				new InputModal(this.app, (result) => {
+					const gitCmd = `git -C "${this.settings.vaultPath}" ${result}`
+					this.runGit(gitCmd);
+				}, "Command").open();
+			}
+		})
 		// This adds a settings tab so the user can configure various aspects of the plugin
 		this.addSettingTab(new SampleSettingTab(this.app, this));
 	}
@@ -139,6 +188,73 @@ export default class MyPlugin extends Plugin {
 		await this.saveData(this.settings);
 		console.log(this.settings);
 	}
+}
+
+class InputModal extends Modal {
+  onSubmit: (result: string) => void;
+  placeholder_str: string;
+
+  constructor(app: App, onSubmit: (result: string) => void, placeholderString: string) {
+    super(app);
+    this.onSubmit = onSubmit;
+	this.placeholder_str = placeholderString
+  }
+
+  onOpen() {
+    const { modalEl, contentEl } = this;
+	modalEl.querySelector(".modal-close-button")?.remove();
+	modalEl.querySelector(".modal-header")?.remove();
+	modalEl.addClass("cmd-input");
+
+    // let inputEl: HTMLInputElement;
+
+	  // Label
+	  // const label = contentEl.createEl("label", { text: "Commit Message:" });
+
+	  // Input field
+	  const inputEl = contentEl.createEl("input", {
+		type: "text",
+		placeholder: this.placeholder_str,
+	  });
+	  inputEl.style.width = "100%";
+
+	  // Submit button
+	 //  const button = contentEl.createEl("button", { text: "Submit" });
+	 //  button.addEventListener("click", () => {
+		// this.close();
+		// this.onSubmit(inputEl.value);
+	 //  });
+
+	  // Optional: press Enter to submit
+	  inputEl.addEventListener("keypress", (e) => {
+		if (e.key === "Enter") {
+		  this.close();
+		  this.onSubmit(inputEl.value);
+		}
+	  });
+
+  //   new Setting(contentEl)
+  //     // .setName("Enter text")
+  //     .addText(text => {
+  //       inputEl = text.inputEl;
+		// inputEl.placeholder = "Commit Message";
+  //     });
+		//
+  //   new Setting(contentEl)
+  //     .addButton(btn =>
+  //       btn.setButtonText("Submit")
+  //          .setCta()
+  //          .onClick(() => {
+  //            this.close();
+  //            this.onSubmit(inputEl.value);
+  //          })
+  //     );
+
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
 }
 
 class SampleSettingTab extends PluginSettingTab {

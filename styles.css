@@ -6,3 +6,12 @@ available in the app when your plugin is enabled.
 If your plugin does not need CSS, delete this file.
 
 */
+.cmd-input.modal {
+	padding: 8px;
+	min-height: 0px;
+	position: fixed !important;
+	top: 10% !important;           /* 10% from top of screen */
+	left: 50% !important;          /* center horizontally */
+	transform: translateX(-50%) !important; /* only offset X, not Y */
+	height: max-content;
+}
