@@ -9,6 +9,9 @@ interface MyPluginSettings {
 	saveDepth: int
 	n_max: int
 	n_curr: int
+	save_interval: int
+	last_commit_time: int
+	num_aborts: int
 }
 
 interface SaveSchema {
@@ -26,6 +29,9 @@ const DEFAULT_SETTINGS: MyPluginSettings = {
 	saveDepth: 0,
 	n_max: 2,
 	n_curr: 0,
+	save_interval: 20 * 60 * 1000,
+	last_commit_time: 0,
+	num_aborts: 0,
 }
 
 const SAVE_SCHEMA: SaveSchema = {
@@ -50,10 +56,13 @@ export default class MyPlugin extends Plugin {
 		this.saveSettings();
 
 		// push then pull on load
-		var gitCmd = `git -C "${this.settings.vaultPath}" push`;
+		var gitCmd = `git -C "${this.settings.vaultPath}" add .`;
+		gitCmd += ` && git -C "${this.settings.vaultPath}" commit -m "automated commit"`;
+		gitCmd += ` && git -C "${this.settings.vaultPath}" push`;
+		gitCmd += `; git -C "${this.settings.vaultPath}" pull`;
 		this.runGit(gitCmd);
-		var gitCmd = `git -C "${this.settings.vaultPath}" pull`;
-		this.runGit(gitCmd);
+		this.settings.last_commit_time = Date.now();
+		console.log(`Time: ${this.settings.last_commit_time}`)
 
 		// Save functionality
 		this.registerEvent(
@@ -128,16 +137,17 @@ export default class MyPlugin extends Plugin {
 	}
 
 	async runGit(gitCmd: string) {
-		const { exec } = require('child_process');
+		const util = require("util");
+		const { exec } = require("child_process");
+	    const execPromise = util.promisify(exec);
 
-		exec(gitCmd, (error, stdout, stderr) => {
-		  if (error) {
-			console.error(`exec error: ${error}`);
-			return;
-		  }
-		  console.log(`stdout: ${stdout}`);
-		  console.error(`stderr: ${stderr}`);
-		});
+	    try {
+			const { stdout, stderr } = await execPromise(gitCmd);
+			if (stdout) console.log(`stdout: ${stdout}`);
+			if (stderr) console.error(`stderr: ${stderr}`);
+	    } catch (error: any) {
+			console.error(`exec error: ${error.message}`);
+		}
 	}
 
 	async onFileSave(file: TFile) {
@@ -160,24 +170,42 @@ export default class MyPlugin extends Plugin {
 		}
 
 		fullCmd = gitCmd + gitAdd;
-		// await this.runGit(gitCmd, gitAdd);
+		await this.runGit(gitCmd, gitAdd);
 
 		// commit
-		if (this.settings.saveSchema === SAVE_SCHEMA.onMajSave) {
-			this.settings.n_curr += 1;
 
-			if (this.settings.n_curr === this.settings.n_max) {
-				this.settings.n_curr = 0;
-				var gitCommitPush = ` && ${gitCmd} commit -m "automated commit" && ${gitCmd} push`;
+			if (this.settings.saveSchema === SAVE_SCHEMA.onMajSave) {
+				this.settings.n_curr += 1;
+
+				if (this.settings.n_curr === this.settings.n_max) {
+					this.settings.n_curr = 0;
+					var gitCommitPush = `${gitCmd} commit -m "automated commit" && ${gitCmd} push`;
+				}
+			} else if (this.settings.saveSchema === SAVE_SCHEMA.onSave) {
+				var gitCommitPush = `${gitCmd} commit -m "automated commit" && ${gitCmd} push`;
+			} else {
+				return;
 			}
-		} else if (this.settings.saveSchema === SAVE_SCHEMA.onSave) {
-			var gitCommitPush = ` && ${gitCmd} commit -m "automated commit" && ${gitCmd} push`;
-		} else {
-			var gitCommitPush = '';
-		}
 
-		fullCmd += gitCommitPush;
-		this.runGit(fullCmd);
+		if (Date.now() < this.settings.last_commit_time + this.settings.save_interval) {
+			console.log("Commit aborted: Too close to previous commit")
+			if (this.settings.num_aborts == 0) {
+				this.settings.num_aborts += 1;
+				console.log("defering commit");
+
+				(async () => {
+					await sleep(this.settings.save_interval);
+					await this.runGit(gitCommitPush);
+					this.settings.num_aborts = 0;
+				})();
+
+				console.log("defer completed");
+			}
+			return;
+		}
+		this.settings.last_commit_time = Date.now();
+
+		await this.runGit(gitCommitPush);
 	}
 
 	async loadSettings() {
